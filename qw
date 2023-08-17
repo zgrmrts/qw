@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+# Determine the directory of the current script
+SOURCE=${BASH_SOURCE[0]}
+while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+    DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
+    SOURCE=$(readlink "$SOURCE")
+    [[ $SOURCE != /* ]] && SOURCE=$DIR/$SOURCE
+done
+SCRIPT_DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
+QW_ENV_ROOT="${HOME}/.qw/env"
+
+# Function to display usage information
+usage() {
+    echo "Usage:"
+    echo "  ${0} <profile-name>     : Spawn or switch to the specified profile"
+    echo "  ${0} --list            : List all available profiles"
+    echo "  ${0} --remove <profile>: Remove the specified profile"
+    echo "  ${0} --rename <old> <new> : Rename a profile from <old> to <new>"
+    exit 1
+}
+
+# No arguments provided
+if [[ $# -lt 1 ]]; then
+    usage
+fi
+
+ACTION="$1"
+
+# Handle various actions
+case "$ACTION" in
+--list)
+    echo "Available profiles:"
+    ls "$QW_ENV_ROOT"
+    ;;
+
+--remove)
+    if [[ $# -ne 2 ]]; then
+        usage
+    fi
+    rm -r "${QW_ENV_ROOT}/${2}"
+    echo "Removed profile: ${2}"
+    ;;
+
+--rename)
+    if [[ $# -ne 3 ]]; then
+        usage
+    fi
+    OLD_PROFILE="$2"
+    NEW_PROFILE="$3"
+    OLD_PROFILE_PATH="${QW_ENV_ROOT}/${OLD_PROFILE}"
+    NEW_PROFILE_PATH="${QW_ENV_ROOT}/${NEW_PROFILE}"
+
+    # Rename the main directory
+    mv "$OLD_PROFILE_PATH" "$NEW_PROFILE_PATH"
+
+    # Update any paths in the pwd files under windowX directories
+    for i in {1..4}; do
+        PWDFILE="${NEW_PROFILE_PATH}/window${i}/pwd"
+        if [[ -f "$PWDFILE" ]]; then
+            OLD_ESCAPED_PATH=$(printf '%s\n' "${QW_ENV_ROOT}/${OLD_PROFILE}/working_dir" | sed -e 's/[\/&]/\\&/g')
+            NEW_ESCAPED_PATH=$(printf '%s\n' "${QW_ENV_ROOT}/${NEW_PROFILE}/working_dir" | sed -e 's/[\/&]/\\&/g')
+            sed -i "s|${OLD_ESCAPED_PATH}|${NEW_ESCAPED_PATH}|g" "$PWDFILE"
+        fi
+    done
+
+    echo "Renamed profile from ${OLD_PROFILE} to ${NEW_PROFILE}"
+    ;;
+
+*)
+    CONF="$1"
+    if (wmctrl -lp | grep -q "qw ${CONF}"); then
+        wmctrl -a "qw ${CONF}"
+    else
+        TEMPFILE="$(mktemp -t --suffix .conf term.XXXXXXX)"
+        cp "${SCRIPT_DIR}/special-terminator-config" "${TEMPFILE}"
+        ESCAPED_CONF=$(printf '%s\n' "$CONF" | sed -e 's/[\/&]/\\&/g')
+        sed -i "s/REPLACE1/${ESCAPED_CONF}/g" "${TEMPFILE}"
+        sed -i "s/REPLACE2/${ESCAPED_CONF}/g" "${TEMPFILE}"
+        ESCAPED_SCRIPT_DIR=$(printf '%s\n' "$SCRIPT_DIR" | sed -e 's/[\/&]/\\&/g')
+        sed -i "s/REPLACE3/${ESCAPED_SCRIPT_DIR}/g" "${TEMPFILE}"
+
+        terminator --no-dbus --config="${TEMPFILE}" --layout=special --profile=special --maximise --title="qw ${CONF}" &
+    fi
+    ;;
+esac
+
+exit 0

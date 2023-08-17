@@ -64,15 +64,13 @@ git clone https://github.com/zgrmrts/qw.git
 cd qw
 ```
 
-3. Provide Execution Permissions to Scripts:
+3. Add the Scripts to Your PATH
+
+Add `qw` to your PATH. Put the following in .bashrc and/or .profile:
 
 ```bash
-chmod +x *.sh
+source "${PATH_TO_QW}/init_qw.sh"
 ```
-
-4. Add the Scripts to Your System PATH:
-
-To seamlessly use qw, add the script's directory to your PATH variable or create symbolic links in a directory already in your PATH.
 
 ## Contributing
 

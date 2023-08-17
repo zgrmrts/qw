@@ -13,7 +13,7 @@ while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 SCRIPT_DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
 
-export QW_ENV_ROOT="${HOME}/.qw/env"
+QW_ENV_ROOT="${HOME}/.qw/env"
 QW_WINDOW_ROOT_DIR="${QW_ENV_ROOT}/${QW_PROFILE}/${QW_WINDOW}"
 mkdir -p "${QW_WINDOW_ROOT_DIR}"
 # every window have its own bash history
@@ -37,4 +37,3 @@ else
   cd "${QW_NEW_WD}" 2>/dev/null
   echo "${QW_NEW_WD}" >"${QW_PWDFILE}"
 fi
-source "${SCRIPT_DIR}/qw-completion.bash"

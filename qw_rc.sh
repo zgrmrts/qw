@@ -30,10 +30,4 @@ PROMPT_COMMAND="pwd>${QW_PWDFILE};${PROMPT_COMMAND}"
 # restore wd, if any exists for this profile ...
 if [[ -r ${QW_PWDFILE} ]]; then
   cd "$(cat "${QW_PWDFILE}")" 2>/dev/null
-else
-  # ... or create a directory for the profile
-  QW_NEW_WD="${QW_ENV_ROOT}/${QW_PROFILE}/working_dir"
-  mkdir -p "${QW_NEW_WD}" 2>/dev/null
-  cd "${QW_NEW_WD}" 2>/dev/null
-  echo "${QW_NEW_WD}" >"${QW_PWDFILE}"
 fi

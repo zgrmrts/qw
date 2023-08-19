@@ -10,6 +10,141 @@ done
 SCRIPT_DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
 QW_ENV_ROOT="${HOME}/.qw/env"
 
+function error_exit {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Generate special terminator config file
+add_hpaned() {
+    local parent="$1"
+    local no="$2"
+    cat <<EOF
+        [[[hp.${no}]]]
+            order="${orders[$parent]}"
+            parent="$parent"
+            type=HPaned
+EOF
+    orders["hp.${no}"]="0"
+    orders[$parent]=$((${orders[$parent]} + 1))
+}
+add_vpaned() {
+    local parent="$1"
+    local row="$2"
+    local col="$3"
+    cat <<EOF
+        [[[vp.${col}.${row}]]]
+            order="${orders[$parent]}"
+            parent=${parent}
+            type=VPaned
+EOF
+    orders["vp.${col}.${row}"]="0"
+    orders[$parent]=$((${orders[$parent]} + 1))
+}
+add_row() {
+    local parent="$1"
+    local row="$2"
+    local col="$3"
+    cat <<EOF
+        [[[terminal.${col}.${row}]]]
+            order="${orders[$parent]}"
+            parent=${parent}
+            type=Terminal
+            profile=profile.${col}.${row}
+            title="Profile: ${QW_PROFILE} Window no: ${global_window_counter}"
+EOF
+    orders[$parent]=$((${orders[$parent]} + 1))
+    PROFILES+=$(
+        cat <<EOF
+
+    [[profile.${col}.${row}]]
+        cursor_color = "#aaaaaa"
+        custom_command = exec bash --init-file <(echo "QW_PROFILE=${QW_PROFILE}; QW_WINDOW=window${global_window_counter}; . ${SCRIPT_DIR}/qw_rc.sh")
+        scrollback_lines = 5000
+        use_custom_command = True
+        exit_action = restart
+        use_system_font = False
+        font = Ubuntu Mono 11
+EOF
+    )
+    ((global_window_counter++))
+}
+get_number_of_windows() {
+    local rowcols="$1"
+    # Check input string format
+    if [[ ! "$rowcols" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
+        echo "Invalid input (${rowcols}). Please provide in the format: <positive integer>x<positive integer>" >&2
+        exit 1
+    fi
+
+    IFS='x' read -ra dimensions <<<"$rowcols"
+    local cols=${dimensions[0]}
+    local rows=${dimensions[1]}
+    echo $((rows * cols))
+}
+get_row_cols_from_profile_or_default() {
+    profile_config="$1"
+    local ROWCOLS=$( (source "$profile_config" && echo $ROWCOLS)) # TODO: fix this, dangerous!
+    if [[ -z "$ROWCOLS" ]]; then
+        ROWCOLS="2x2"
+    fi
+    echo "$ROWCOLS"
+}
+generate_terminator_config_file() {
+    local input_string="$1"
+    QW_PROFILE="$2"
+    declare -A orders
+    orders=()
+    global_window_counter=1
+    PROFILES=""
+
+    # Check input string format
+    if [[ ! "$input_string" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
+        echo "Invalid input. Please provide in the format: <positive integer>x<positive integer>" >&2
+        exit 1
+    fi
+
+    # Split string to extract number of columns and rows
+    IFS='x' read -ra dimensions <<<"$input_string"
+    cols=${dimensions[0]}
+    rows=${dimensions[1]}
+
+    cat <<EOF
+[global_config]
+    broadcast_special = off
+    enabled_plugins = LaunchpadCodeURLHandler, APTURLHandler, LaunchpadBugURLHandler
+    inactive_color_offset = 1.0
+    suppress_multiple_term_dialog = True
+[layouts]
+    [[special]]
+        [[[root]]]
+            order = 0
+            parent = ""
+            type = Window
+EOF
+
+    # Loop over columns and rows
+    col_parent="root"
+    orders["root"]="0"
+    for ((c = 1; c <= cols; c++)); do
+        if ((c < cols)); then
+            add_hpaned $col_parent $c
+            col_parent="hp.${c}"
+        fi
+        row_parent="${col_parent}"
+        for ((r = 1; r <= rows; r++)); do
+            if ((r < rows)); then
+                add_vpaned $row_parent $r $c
+                row_parent="vp.${c}.${r}"
+            fi
+            add_row $row_parent $r $c
+        done
+    done
+
+    echo -en "[profiles]"
+    echo "${PROFILES}"
+}
+
 # Function to display usage information
 usage() {
     echo "Usage:"
@@ -38,7 +173,7 @@ case "$ACTION" in
     if [[ $# -ne 2 ]]; then
         usage
     fi
-    rm -r "${QW_ENV_ROOT}/${2}"
+    rm -r "${QW_ENV_ROOT:?}/${2}"
     echo "Removed profile: ${2}"
     ;;
 
@@ -55,7 +190,10 @@ case "$ACTION" in
     mv "$OLD_PROFILE_PATH" "$NEW_PROFILE_PATH"
 
     # Update any paths in the pwd files under windowX directories
-    for i in {1..4}; do
+    ROWCOLS=$(get_row_cols_from_profile_or_default "${QW_ENV_ROOT}/${NEW_PROFILE}/config")
+    numwins=$(get_number_of_windows ${ROWCOLS})
+
+    for ((i = 1; i < numwins; i++)); do
         PWDFILE="${NEW_PROFILE_PATH}/window${i}/pwd"
         if [[ -f "$PWDFILE" ]]; then
             OLD_ESCAPED_PATH=$(printf '%s\n' "${QW_ENV_ROOT}/${OLD_PROFILE}/working_dir" | sed -e 's/[\/&]/\\&/g')
@@ -69,11 +207,24 @@ case "$ACTION" in
 
 *)
     CONF="$1"
+    if [[ ! -d "${QW_ENV_ROOT}/${CONF}" ]]; then
+        mkdir -p "${QW_ENV_ROOT}/${CONF}" || error_exit "can't create directory ${QW_ENV_ROOT}/${CONF}"
+        ROWCOLS="2x2"
+        echo "ROWCOLS=${ROWCOLS}" >"${QW_ENV_ROOT}/${CONF}/config"
+        QW_NEW_WD="${QW_ENV_ROOT}/${CONF}/working_dir"
+        mkdir -p "${QW_NEW_WD}" || error_exit "can't create directory ${QW_NEW_WD}"
+        numwins=$(get_number_of_windows ${ROWCOLS})
+        for ((window = 1; window <= numwins; window++)); do
+            mkdir -p "${QW_ENV_ROOT}/${CONF}/window${window}" || error_exit "can't create directory ${QW_ENV_ROOT}/${CONF}/window${window}"
+            echo "${QW_NEW_WD}" >"${QW_ENV_ROOT}/${CONF}/window${window}/pwd"
+        done
+    fi
     if (wmctrl -lp | grep -q "qw ${CONF}"); then
         wmctrl -a "qw ${CONF}"
     else
         TEMPFILE="$(mktemp -t --suffix .conf term.XXXXXXX)"
-        cp "${SCRIPT_DIR}/special-terminator-config" "${TEMPFILE}"
+        ROWCOLS=$(get_row_cols_from_profile_or_default "${QW_ENV_ROOT}/${CONF}/config")
+        generate_terminator_config_file "${ROWCOLS}" "${CONF}" >"${TEMPFILE}"
         ESCAPED_CONF=$(printf '%s\n' "$CONF" | sed -e 's/[\/&]/\\&/g')
         sed -i "s/REPLACE1/${ESCAPED_CONF}/g" "${TEMPFILE}"
         sed -i "s/REPLACE2/${ESCAPED_CONF}/g" "${TEMPFILE}"

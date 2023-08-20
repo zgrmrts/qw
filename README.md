@@ -15,18 +15,24 @@ Profile-based, multi-window workspaces in terminator with individualized bash hi
 
 ## Prerequisites
 
-- **Terminator:** Ensure [Terminator](https://gnome-terminator.org/) is installed on your system.
+Ensure
+
+- **Terminator:** [Terminator](https://gnome-terminator.org/)
+- **jq:** [jq](https://jqlang.github.io/jq/)
+- **sponge:** [sponge](https://github.com/stigtsp/moreutils/blob/master/sponge.c)
+- **wmctrl:** [wmctrl](https://github.com/dancor/wmctrl)
+
+are installed on your system.
 
 ## Usage
 
 ### Spawning or Switching to a Profile
 
 ```bash
-qw <profile_name>
+qw <profile_name> [<cols>x<rows>]
 ```
 
-If the profile is already active, qw will switch to the corresponding terminator window. For new profiles, a fresh environment is set up in a dedicated directory, storing the bash history, current directory info, and a temporary workspace for each shell.
-
+If the profile is already active, `qw` will switch to the corresponding `terminator` window. For new profiles, a fresh environment is set up in a dedicated directory. If `<cols>x<rows>` is provided for new profiles, the terminator window will be divided into the specified number of columns and rows. Otherwise, it will use a default layout of `2x2`. Each section in the grid stores the bash history, current directory info, and a temporary workspace for each shell.
 
 ### Listing Profiles
 

@@ -1,65 +1,187 @@
 #!/usr/bin/env bash
 
-# Determine the directory of the current script
-SOURCE=${BASH_SOURCE[0]}
-while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
-    DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
-    SOURCE=$(readlink "$SOURCE")
-    [[ $SOURCE != /* ]] && SOURCE=$DIR/$SOURCE
-done
-SCRIPT_DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
-QW_ENV_ROOT="${HOME}/.qw/env"
+# set -euvx
+
+# constants
+gc_qw_dir="${HOME}/.qw"
+gc_env_dir="${gc_qw_dir}/env"
+gc_prof_conf_file="config.json"
+gc_prof_pwd_file="pwd"
+gc_prof_hist_file="bash_history"
+gc_prof_temp_work_dir="working_dir"
+gc_prof_window_name="window"
+gc_conf_dflt_content='{"rowcols":"2x2"}'
+gc_termi_conf_file="terminator.conf"
+gc_rc_file="qw_rc.sh"
 
 function error_exit {
     echo "Error: $1" >&2
     exit 1
 }
 
-# Generate special terminator config file
-add_hpaned() {
+# get certain file/dir names of a profile
+function directory_of_profile() {
+    local profile_name="$1"
+    echo "${gc_env_dir}/${profile_name}"
+}
+
+function config_file_of_profile() {
+    local profile_name="$1"
+    echo "${gc_env_dir}/${profile_name}/${gc_prof_conf_file}"
+}
+
+function window_dir_of_profile() {
+    local profile_name="$1"
+    local num="$2"
+    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}"
+}
+
+function pwd_file_of_window_of_profile() {
+    local profile_name="$1"
+    local num="$2"
+    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_prof_pwd_file}"
+}
+
+function hist_file_of_window_of_profile() {
+    local profile_name="$1"
+    local num="$2"
+    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_prof_hist_file}"
+}
+
+function rc_file_of_window_of_profile() {
+    local profile_name="$1"
+    local num="$2"
+    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_rc_file}"
+}
+
+function working_dir_of_profile() {
+    local profile_name="$1"
+    echo "${gc_env_dir}/${profile_name}/${gc_prof_temp_work_dir}"
+}
+
+function termi_conf_file_of_profile() {
+    local profile_name="$1"
+    echo "${gc_env_dir}/${profile_name}/${gc_termi_conf_file}"
+}
+
+#
+function read_item_from_profile_config_file() {
+    local profile_name="$1"
+    local item_name="$2"
+    local config_file=$(config_file_of_profile "${profile_name}")
+    jq -r ".${item_name}" "$config_file"
+}
+
+function create_default_config_file_if_not_exist() {
+    local profile_name="$1"
+    local config_file=$(config_file_of_profile "${profile_name}")
+    if [[ ! -s "${config_file}" ]]; then
+        echo "${gc_conf_dflt_content}" >"$config_file"
+    fi
+}
+
+function write_item_in_profile_config_file() {
+    local profile_name="$1"
+    local item_name="$2"
+    local item_val="$3"
+    local config_file=$(config_file_of_profile "${profile_name}")
+    local jq_string=$(printf '.%s="%s"' "${item_name}" "${item_val}")
+    create_default_config_file_if_not_exist "${profile_name}"
+    jq "${jq_string}" "${config_file}" | sponge "${config_file}"
+}
+
+function check_row_cols_value() {
+    local value="$1"
+    if [[ ! "$value" =~ ^[1-5]x[1-5]$ ]]; then
+        echo "Invalid value: ${value}. Please provide in the format: <positive integer>x<positive integer> (1-5)" >&2
+        exit 1
+    fi
+}
+
+function get_number_of_cols_from_config() {
+    local profile_name="$1"
+    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "rowcols")
+    check_row_cols_value "${rowcols}"
+    local dimensions
+    IFS='x' read -ra dimensions <<<"$rowcols"
+    local cols=${dimensions[0]}
+    echo "${cols}"
+}
+
+function get_number_of_rows_from_config() {
+    local profile_name="$1"
+    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "rowcols")
+    check_row_cols_value "${rowcols}"
+    local dimensions
+    IFS='x' read -ra dimensions <<<"$rowcols"
+    local rows=${dimensions[1]}
+    echo "${rows}"
+}
+
+function get_number_of_windows_from_config() {
+    local profile_name="$1"
+    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "rowcols")
+    check_row_cols_value "${rowcols}"
+    local dimensions
+    IFS='x' read -ra dimensions <<<"$rowcols"
+    local cols=${dimensions[0]}
+    local rows=${dimensions[1]}
+    echo $((rows * cols))
+}
+
+function profile_exists() {
+    local profile_name="$1"
+    local profile_dir=$(directory_of_profile "${profile_name}")
+    test -d "${profile_dir}"
+}
+
+# Generate special terminator config file for the profile
+function termi_conf_add_hpaned() {
     local parent="$1"
     local no="$2"
     cat <<EOF
         [[[hp.${no}]]]
-            order="${orders[$parent]}"
-            parent="$parent"
+            order="${gv_orders[${parent}]}"
+            parent="${parent}"
             type=HPaned
 EOF
-    orders["hp.${no}"]="0"
-    orders[$parent]=$((${orders[$parent]} + 1))
+    gv_orders["hp.${no}"]="0"
+    gv_orders[${parent}]=$((${gv_orders[${parent}]} + 1))
 }
-add_vpaned() {
+function termi_conf_add_vpaned() {
     local parent="$1"
     local row="$2"
     local col="$3"
     cat <<EOF
         [[[vp.${col}.${row}]]]
-            order="${orders[$parent]}"
+            order="${gv_orders[${parent}]}"
             parent=${parent}
             type=VPaned
 EOF
-    orders["vp.${col}.${row}"]="0"
-    orders[$parent]=$((${orders[$parent]} + 1))
+    gv_orders["vp.${col}.${row}"]="0"
+    gv_orders[${parent}]=$((${gv_orders[${parent}]} + 1))
 }
-add_row() {
+function termi_conf_add_terminal() {
     local parent="$1"
     local row="$2"
     local col="$3"
+    local profile_name="$4"
     cat <<EOF
         [[[terminal.${col}.${row}]]]
-            order="${orders[$parent]}"
+            order="${gv_orders[${parent}]}"
             parent=${parent}
             type=Terminal
             profile=profile.${col}.${row}
-            title="Profile: ${QW_PROFILE} Window no: ${global_window_counter}"
+            title="Profile: ${profile_name} Window no: ${gv_window_counter}"
 EOF
-    orders[$parent]=$((${orders[$parent]} + 1))
-    PROFILES+=$(
+    gv_orders[${parent}]=$((${gv_orders[${parent}]} + 1))
+    local rc_file=$(rc_file_of_window_of_profile "${profile_name}" $gv_window_counter)
+    gv_termi_conf_profiles+=$(
         cat <<EOF
 
     [[profile.${col}.${row}]]
         cursor_color = "#aaaaaa"
-        custom_command = exec bash --init-file <(echo "QW_PROFILE=${QW_PROFILE}; QW_WINDOW=window${global_window_counter}; . ${SCRIPT_DIR}/qw_rc.sh")
+        custom_command = exec bash --init-file ${rc_file}
         scrollback_lines = 5000
         use_custom_command = True
         exit_action = restart
@@ -67,47 +189,16 @@ EOF
         font = Ubuntu Mono 11
 EOF
     )
-    ((global_window_counter++))
+    ((gv_window_counter++))
 }
-get_number_of_windows() {
-    local rowcols="$1"
-    # Check input string format
-    if [[ ! "$rowcols" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
-        echo "Invalid input (${rowcols}). Please provide in the format: <positive integer>x<positive integer>" >&2
-        exit 1
-    fi
-
-    IFS='x' read -ra dimensions <<<"$rowcols"
-    local cols=${dimensions[0]}
-    local rows=${dimensions[1]}
-    echo $((rows * cols))
-}
-get_row_cols_from_profile_or_default() {
-    profile_config="$1"
-    local ROWCOLS=$( (source "$profile_config" && echo $ROWCOLS)) # TODO: fix this, dangerous!
-    if [[ -z "$ROWCOLS" ]]; then
-        ROWCOLS="2x2"
-    fi
-    echo "$ROWCOLS"
-}
-generate_terminator_config_file() {
-    local input_string="$1"
-    QW_PROFILE="$2"
-    declare -A orders
-    orders=()
-    global_window_counter=1
-    PROFILES=""
-
-    # Check input string format
-    if [[ ! "$input_string" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
-        echo "Invalid input. Please provide in the format: <positive integer>x<positive integer>" >&2
-        exit 1
-    fi
-
-    # Split string to extract number of columns and rows
-    IFS='x' read -ra dimensions <<<"$input_string"
-    cols=${dimensions[0]}
-    rows=${dimensions[1]}
+function gen_termi_conf() {
+    local rows="$1"
+    local cols="$2"
+    local profile_name="$3"
+    declare -A gv_orders
+    gv_orders=()
+    gv_window_counter=1
+    gv_termi_conf_profiles=""
 
     cat <<EOF
 [global_config]
@@ -124,34 +215,98 @@ generate_terminator_config_file() {
 EOF
 
     # Loop over columns and rows
-    col_parent="root"
-    orders["root"]="0"
+    local col_parent="root"
+    gv_orders["root"]="0"
     for ((c = 1; c <= cols; c++)); do
         if ((c < cols)); then
-            add_hpaned $col_parent $c
+            termi_conf_add_hpaned $col_parent $c
             col_parent="hp.${c}"
         fi
-        row_parent="${col_parent}"
+        local row_parent="${col_parent}"
         for ((r = 1; r <= rows; r++)); do
             if ((r < rows)); then
-                add_vpaned $row_parent $r $c
+                termi_conf_add_vpaned $row_parent $r $c
                 row_parent="vp.${c}.${r}"
             fi
-            add_row $row_parent $r $c
+            termi_conf_add_terminal $row_parent $r $c "${profile_name}"
         done
     done
 
     echo -en "[profiles]"
-    echo "${PROFILES}"
+    echo "${gv_termi_conf_profiles}"
+}
+
+function create_rc_file_for_window() {
+    local profile_name="$1"
+    local window_no="$2"
+    local profile_dir=$(directory_of_profile "${profile_name}")
+    local working_dir=$(working_dir_of_profile "${profile_name}")
+    local termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
+    local window_dir=$(window_dir_of_profile "${profile_name}" $window_no)
+    local pwd_file=$(pwd_file_of_window_of_profile "${profile_name}" $window_no)
+    local hist_file=$(hist_file_of_window_of_profile "${profile_name}" $window_no)
+    cat <<EOF
+#!/usr/bin/env bash
+# this file is auto generated when creating the profile
+# to be run as --init-file by profile shells
+
+# Since, this is run as --init-file for bash, we first run the original init file i.e. .bashrc
+source "\${HOME}/.bashrc"
+
+# restore wd, if any exists for this profile ...
+if [[ -r ${pwd_file} ]]; then
+  cd "\$(cat "${pwd_file}")" 2>/dev/null
+fi
+
+# every window have its own bash history
+HISTFILE="${hist_file}"
+# make history large
+HISTSIZE=100000
+HISTFILESIZE=100000
+# save immediately after every command
+PROMPT_COMMAND="history -a;\$PROMPT_COMMAND"
+# save working directory after every shell command
+PROMPT_COMMAND="pwd>${pwd_file};\${PROMPT_COMMAND}"
+QW_PROFILE="${profile_name}"
+EOF
+}
+
+function create_files_of_profile() {
+    local profile_name="$1"
+    local rowcols="$2"
+    local profile_dir=$(directory_of_profile "${profile_name}")
+    mkdir -p "${profile_dir}" 2>/dev/null || error_exit "Can't create dir ${profile_dir}"
+    local working_dir=$(working_dir_of_profile "${profile_name}")
+    mkdir -p "${working_dir}" 2>/dev/null || error_exit "Can't create dir ${working_dir}"
+    # first write to config
+    write_item_in_profile_config_file "${profile_name}" "rowcols" "${rowcols}"
+    # then use the config
+    local num_windows=$(get_number_of_windows_from_config "${profile_name}")
+    local rows=$(get_number_of_rows_from_config "${profile_name}")
+    local cols=$(get_number_of_cols_from_config "${profile_name}")
+    local termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
+    gen_termi_conf "${rows}" "${cols}" "${profile_name}" >"${termi_conf_file}" || error_exit "Can't create file ${termi_conf_file}"
+    for ((i = 1; i <= num_windows; i++)); do
+        local window_dir=$(window_dir_of_profile "${profile_name}" $i)
+        mkdir -p "${window_dir}" 2>/dev/null || error_exit "Can't create dir ${window_dir}"
+        local pwd_file=$(pwd_file_of_window_of_profile "${profile_name}" $i)
+        echo "${working_dir}" >"${pwd_file}" || error_exit "Can't create file ${pwd_file}"
+        local hist_file=$(hist_file_of_window_of_profile "${profile_name}" $i)
+        touch "${hist_file}" || error_exit "Can't create file ${hist_file}"
+        local rc_file=$(rc_file_of_window_of_profile "${profile_name}" $i)
+        create_rc_file_for_window "${profile_name}" $i >"${rc_file}"
+    done
 }
 
 # Function to display usage information
 usage() {
+    local script_name=$(basename "$0")
     echo "Usage:"
-    echo "  ${0} <profile-name>     : Spawn or switch to the specified profile"
-    echo "  ${0} --list            : List all available profiles"
-    echo "  ${0} --remove <profile>: Remove the specified profile"
-    echo "  ${0} --rename <old> <new> : Rename a profile from <old> to <new>"
+    echo "  ${script_name} <profile-name>  [COLSxROWS] : Spawn or switch to the specified profile"
+    echo "  ${script_name} --list                      : List all available profiles"
+    echo "  ${script_name} --remove <profile>          : Remove the specified profile"
+    echo "  ${script_name} --rename <old> <new>        : Rename a profile from <old> to <new>"
+    echo "  ${script_name} --help                      : This help"
     exit 1
 }
 
@@ -164,16 +319,21 @@ ACTION="$1"
 
 # Handle various actions
 case "$ACTION" in
+--help)
+    usage
+    ;;
 --list)
     echo "Available profiles:"
-    ls "$QW_ENV_ROOT"
+    ls "$gc_env_dir"
     ;;
 
 --remove)
     if [[ $# -ne 2 ]]; then
         usage
     fi
-    rm -r "${QW_ENV_ROOT:?}/${2}"
+    profile_name="$2"
+    profile_dir=$(directory_of_profile "${profile_name}")
+    rm -rf "${profile_dir:?}"
     echo "Removed profile: ${2}"
     ;;
 
@@ -181,57 +341,58 @@ case "$ACTION" in
     if [[ $# -ne 3 ]]; then
         usage
     fi
-    OLD_PROFILE="$2"
-    NEW_PROFILE="$3"
-    OLD_PROFILE_PATH="${QW_ENV_ROOT}/${OLD_PROFILE}"
-    NEW_PROFILE_PATH="${QW_ENV_ROOT}/${NEW_PROFILE}"
+    profile_name="$2"
+    new_profile_name="$3"
+    profile_dir=$(directory_of_profile "${profile_name}")
+    new_profile_dir=$(directory_of_profile "${new_profile_name}")
+    escaped_profile_dir=$(printf '%s\n' "${profile_dir}" | sed -e 's/[\/&]/\\&/g')
+    new_escaped_profile_dir=$(printf '%s\n' "${new_profile_dir}" | sed -e 's/[\/&]/\\&/g')
+    working_dir=$(working_dir_of_profile "${profile_name}")
+    new_working_dir=$(working_dir_of_profile "${new_profile_name}")
+    escaped_working_dir=$(printf '%s\n' "${working_dir}" | sed -e 's/[\/&]/\\&/g')
+    new_escaped_working_dir=$(printf '%s\n' "${new_working_dir}" | sed -e 's/[\/&]/\\&/g')
+    termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
+    new_termi_conf_file=$(termi_conf_file_of_profile "${new_profile_name}")
 
     # Rename the main directory
-    mv "$OLD_PROFILE_PATH" "$NEW_PROFILE_PATH"
+    mv "$profile_dir" "$new_profile_dir"
 
+    sed -i "s|${escaped_profile_dir}|${new_escaped_profile_dir}|g" "$new_termi_conf_file"
     # Update any paths in the pwd files under windowX directories
-    ROWCOLS=$(get_row_cols_from_profile_or_default "${QW_ENV_ROOT}/${NEW_PROFILE}/config")
-    numwins=$(get_number_of_windows ${ROWCOLS})
+    num_windows=$(get_number_of_windows_from_config "${new_profile_name}")
 
-    for ((i = 1; i < numwins; i++)); do
-        PWDFILE="${NEW_PROFILE_PATH}/window${i}/pwd"
-        if [[ -f "$PWDFILE" ]]; then
-            OLD_ESCAPED_PATH=$(printf '%s\n' "${QW_ENV_ROOT}/${OLD_PROFILE}/working_dir" | sed -e 's/[\/&]/\\&/g')
-            NEW_ESCAPED_PATH=$(printf '%s\n' "${QW_ENV_ROOT}/${NEW_PROFILE}/working_dir" | sed -e 's/[\/&]/\\&/g')
-            sed -i "s|${OLD_ESCAPED_PATH}|${NEW_ESCAPED_PATH}|g" "$PWDFILE"
+    for ((i = 1; i <= num_windows; i++)); do
+        pwd_file=$(pwd_file_of_window_of_profile "${new_profile_name}" $i)
+        if [[ -f "$pwd_file" ]]; then
+            sed -i "s|${escaped_working_dir}|${new_escaped_working_dir}|g" "$pwd_file"
+        fi
+        rc_file=$(rc_file_of_window_of_profile "${new_profile_name}" $i)
+        if [[ -f "$rc_file" ]]; then
+            sed -i "s|${escaped_profile_dir}|${new_escaped_profile_dir}|g" "$rc_file"
         fi
     done
 
-    echo "Renamed profile from ${OLD_PROFILE} to ${NEW_PROFILE}"
+    echo "Renamed profile from ${profile_name} to ${new_profile_name}"
     ;;
 
 *)
-    CONF="$1"
-    if [[ ! -d "${QW_ENV_ROOT}/${CONF}" ]]; then
-        mkdir -p "${QW_ENV_ROOT}/${CONF}" || error_exit "can't create directory ${QW_ENV_ROOT}/${CONF}"
-        ROWCOLS="2x2"
-        echo "ROWCOLS=${ROWCOLS}" >"${QW_ENV_ROOT}/${CONF}/config"
-        QW_NEW_WD="${QW_ENV_ROOT}/${CONF}/working_dir"
-        mkdir -p "${QW_NEW_WD}" || error_exit "can't create directory ${QW_NEW_WD}"
-        numwins=$(get_number_of_windows ${ROWCOLS})
-        for ((window = 1; window <= numwins; window++)); do
-            mkdir -p "${QW_ENV_ROOT}/${CONF}/window${window}" || error_exit "can't create directory ${QW_ENV_ROOT}/${CONF}/window${window}"
-            echo "${QW_NEW_WD}" >"${QW_ENV_ROOT}/${CONF}/window${window}/pwd"
-        done
-    fi
-    if (wmctrl -lp | grep -q "qw ${CONF}"); then
-        wmctrl -a "qw ${CONF}"
+    profile_name="$1"
+    if [[ $# -ge 2 ]]; then
+        rowcols="$2"
     else
-        TEMPFILE="$(mktemp -t --suffix .conf term.XXXXXXX)"
-        ROWCOLS=$(get_row_cols_from_profile_or_default "${QW_ENV_ROOT}/${CONF}/config")
-        generate_terminator_config_file "${ROWCOLS}" "${CONF}" >"${TEMPFILE}"
-        ESCAPED_CONF=$(printf '%s\n' "$CONF" | sed -e 's/[\/&]/\\&/g')
-        sed -i "s/REPLACE1/${ESCAPED_CONF}/g" "${TEMPFILE}"
-        sed -i "s/REPLACE2/${ESCAPED_CONF}/g" "${TEMPFILE}"
-        ESCAPED_SCRIPT_DIR=$(printf '%s\n' "$SCRIPT_DIR" | sed -e 's/[\/&]/\\&/g')
-        sed -i "s/REPLACE3/${ESCAPED_SCRIPT_DIR}/g" "${TEMPFILE}"
-
-        terminator --no-dbus --config="${TEMPFILE}" --layout=special --profile=special --maximise --title="qw ${CONF}" &
+        rowcols="2x2"
+    fi
+    if (! profile_exists "${profile_name}"); then
+        echo "Creating profile: ${profile_name} ${rowcols}"
+        create_files_of_profile "${profile_name}" "${rowcols}"
+    fi
+    if (wmctrl -lp | grep -q "qw ${profile_name}"); then
+        echo "Switching to window"
+        wmctrl -a "qw ${profile_name}"
+    else
+        echo "Creating session for ${profile_name}"
+        termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
+        terminator --no-dbus --config="${termi_conf_file}" --layout=special --profile=special --maximise --title="qw ${profile_name}" &
     fi
     ;;
 esac

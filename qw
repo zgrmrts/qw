@@ -139,11 +139,13 @@ function profile_exists() {
 function termi_conf_add_hpaned() {
     local parent="$1"
     local no="$2"
+    local ratio="$3"
     cat <<EOF
         [[[hp.${no}]]]
             order="${gv_orders[${parent}]}"
             parent="${parent}"
             type=HPaned
+            ratio=${ratio}
 EOF
     gv_orders["hp.${no}"]="0"
     gv_orders[${parent}]=$((${gv_orders[${parent}]} + 1))
@@ -152,11 +154,13 @@ function termi_conf_add_vpaned() {
     local parent="$1"
     local row="$2"
     local col="$3"
+    local ratio="$4"
     cat <<EOF
         [[[vp.${col}.${row}]]]
             order="${gv_orders[${parent}]}"
             parent=${parent}
             type=VPaned
+            ratio=${ratio}
 EOF
     gv_orders["vp.${col}.${row}"]="0"
     gv_orders[${parent}]=$((${gv_orders[${parent}]} + 1))
@@ -191,6 +195,11 @@ EOF
     )
     ((gv_window_counter++))
 }
+function calc_ratio() {
+    local index="$1"
+    local total="$2"
+    echo "scale=3; 1/(${total}-${index}+1)" | bc | sed 's/^\./0\./'
+}
 function gen_termi_conf() {
     local rows="$1"
     local cols="$2"
@@ -219,13 +228,15 @@ EOF
     gv_orders["root"]="0"
     for ((c = 1; c <= cols; c++)); do
         if ((c < cols)); then
-            termi_conf_add_hpaned $col_parent $c
+            ratio=$(calc_ratio ${c} ${cols})
+            termi_conf_add_hpaned $col_parent $c $ratio
             col_parent="hp.${c}"
         fi
         local row_parent="${col_parent}"
         for ((r = 1; r <= rows; r++)); do
             if ((r < rows)); then
-                termi_conf_add_vpaned $row_parent $r $c
+                ratio=$(calc_ratio ${r} ${rows})
+                termi_conf_add_vpaned $row_parent $r $c $ratio
                 row_parent="vp.${c}.${r}"
             fi
             termi_conf_add_terminal $row_parent $r $c "${profile_name}"

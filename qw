@@ -5,12 +5,12 @@
 # constants
 gc_qw_dir="${HOME}/.qw"
 gc_env_dir="${gc_qw_dir}/env"
-gc_prof_conf_file="config.json"
+gc_prof_conf_file="config"
 gc_prof_pwd_file="pwd"
 gc_prof_hist_file="bash_history"
 gc_prof_temp_work_dir="working_dir"
 gc_prof_window_name="window"
-gc_conf_dflt_content='{"rowcols":"2x2"}'
+gc_conf_dflt_content="QW_ROWSCOLS=2x2"
 gc_termi_conf_file="terminator.conf"
 gc_rc_file="qw_rc.sh"
 
@@ -69,7 +69,7 @@ function read_item_from_profile_config_file() {
     local profile_name="$1"
     local item_name="$2"
     local config_file=$(config_file_of_profile "${profile_name}")
-    jq -r ".${item_name}" "$config_file"
+    (source ${config_file} && echo ${!item_name})
 }
 
 function create_default_config_file_if_not_exist() {
@@ -85,9 +85,13 @@ function write_item_in_profile_config_file() {
     local item_name="$2"
     local item_val="$3"
     local config_file=$(config_file_of_profile "${profile_name}")
-    local jq_string=$(printf '.%s="%s"' "${item_name}" "${item_val}")
     create_default_config_file_if_not_exist "${profile_name}"
-    jq "${jq_string}" "${config_file}" | sponge "${config_file}"
+    if (grep -q "^${item_name}=.*" ${config_file}); then
+        escaped_name_val_str=$(printf '%s\n' "${item_name}=${item_val}" | sed -e 's/[\/&]/\\&/g')
+        sed -i "s/^${item_name}=.*/${escaped_name_val_str}/" ${config_file}
+    else
+        echo "${item_name}=${item_val}" >>${config_file}
+    fi
 }
 
 function check_row_cols_value() {
@@ -100,7 +104,7 @@ function check_row_cols_value() {
 
 function get_number_of_cols_from_config() {
     local profile_name="$1"
-    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "rowcols")
+    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")
     check_row_cols_value "${rowcols}"
     local dimensions
     IFS='x' read -ra dimensions <<<"$rowcols"
@@ -110,7 +114,7 @@ function get_number_of_cols_from_config() {
 
 function get_number_of_rows_from_config() {
     local profile_name="$1"
-    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "rowcols")
+    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")
     check_row_cols_value "${rowcols}"
     local dimensions
     IFS='x' read -ra dimensions <<<"$rowcols"
@@ -120,7 +124,7 @@ function get_number_of_rows_from_config() {
 
 function get_number_of_windows_from_config() {
     local profile_name="$1"
-    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "rowcols")
+    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")
     check_row_cols_value "${rowcols}"
     local dimensions
     IFS='x' read -ra dimensions <<<"$rowcols"
@@ -289,7 +293,7 @@ function create_files_of_profile() {
     local working_dir=$(working_dir_of_profile "${profile_name}")
     mkdir -p "${working_dir}" 2>/dev/null || error_exit "Can't create dir ${working_dir}"
     # first write to config
-    write_item_in_profile_config_file "${profile_name}" "rowcols" "${rowcols}"
+    write_item_in_profile_config_file "${profile_name}" "QW_ROWSCOLS" "${rowcols}"
     # then use the config
     local num_windows=$(get_number_of_windows_from_config "${profile_name}")
     local rows=$(get_number_of_rows_from_config "${profile_name}")

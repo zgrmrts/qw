@@ -18,8 +18,6 @@ Profile-based, multi-window workspaces in terminator with individualized bash hi
 Ensure
 
 - **Terminator:** [Terminator](https://gnome-terminator.org/)
-- **jq:** [jq](https://jqlang.github.io/jq/)
-- **sponge:** [sponge](https://github.com/stigtsp/moreutils/blob/master/sponge.c)
 - **wmctrl:** [wmctrl](https://github.com/dancor/wmctrl)
 
 are installed on your system.

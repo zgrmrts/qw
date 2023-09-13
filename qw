@@ -10,7 +10,7 @@ gc_prof_pwd_file="pwd"
 gc_prof_hist_file="bash_history"
 gc_prof_temp_work_dir="working_dir"
 gc_prof_window_name="window"
-gc_conf_dflt_content="QW_ROWSCOLS=2x2"
+gc_conf_dflt_content="HISTSIZE=\"100000\"\nHISTFILESIZE=\"100000\"\nQW_ROWSCOLS=\"2x2\"\n"
 gc_termi_conf_file="terminator.conf"
 gc_rc_file="qw_rc.sh"
 
@@ -20,63 +20,54 @@ function error_exit {
 }
 
 # get certain file/dir names of a profile
-function directory_of_profile() {
-    local profile_name="$1"
-    echo "${gc_env_dir}/${profile_name}"
+function get_path() {
+    local type="$1"
+    local profile_name="$2"
+    local num="$3" # Used for window-specific types
+
+    case $type in
+    "profile_dir")
+        echo "${gc_env_dir}/${profile_name}"
+        ;;
+    "config_file")
+        echo "${gc_env_dir}/${profile_name}/${gc_prof_conf_file}"
+        ;;
+    "working_dir")
+        echo "${gc_env_dir}/${profile_name}/${gc_prof_temp_work_dir}"
+        ;;
+    "termi_conf_file")
+        echo "${gc_env_dir}/${profile_name}/${gc_termi_conf_file}"
+        ;;
+    "window_dir")
+        echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}"
+        ;;
+    "pwd_file")
+        echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_prof_pwd_file}"
+        ;;
+    "hist_file")
+        echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_prof_hist_file}"
+        ;;
+    "rc_file")
+        echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_rc_file}"
+        ;;
+    *)
+        echo "Unknown path type: ${type}"
+        ;;
+    esac
 }
 
-function config_file_of_profile() {
-    local profile_name="$1"
-    echo "${gc_env_dir}/${profile_name}/${gc_prof_conf_file}"
-}
-
-function window_dir_of_profile() {
-    local profile_name="$1"
-    local num="$2"
-    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}"
-}
-
-function pwd_file_of_window_of_profile() {
-    local profile_name="$1"
-    local num="$2"
-    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_prof_pwd_file}"
-}
-
-function hist_file_of_window_of_profile() {
-    local profile_name="$1"
-    local num="$2"
-    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_prof_hist_file}"
-}
-
-function rc_file_of_window_of_profile() {
-    local profile_name="$1"
-    local num="$2"
-    echo "${gc_env_dir}/${profile_name}/${gc_prof_window_name}${num}/${gc_rc_file}"
-}
-
-function working_dir_of_profile() {
-    local profile_name="$1"
-    echo "${gc_env_dir}/${profile_name}/${gc_prof_temp_work_dir}"
-}
-
-function termi_conf_file_of_profile() {
-    local profile_name="$1"
-    echo "${gc_env_dir}/${profile_name}/${gc_termi_conf_file}"
-}
-
-#
 function read_item_from_profile_config_file() {
     local profile_name="$1"
     local item_name="$2"
-    local config_file=$(config_file_of_profile "${profile_name}")
-    (source ${config_file} && echo ${!item_name})
+    local config_file="$(get_path config_file "${profile_name}")"
+    (source "${config_file}" && echo "${!item_name}")
 }
 
 function create_default_config_file_if_not_exist() {
     local profile_name="$1"
-    local config_file=$(config_file_of_profile "${profile_name}")
+    local config_file="$(get_path config_file "${profile_name}")"
     if [[ ! -s "${config_file}" ]]; then
-        echo "${gc_conf_dflt_content}" >"$config_file"
+        echo -en "${gc_conf_dflt_content}" >"$config_file"
     fi
 }
 
@@ -84,14 +75,22 @@ function write_item_in_profile_config_file() {
     local profile_name="$1"
     local item_name="$2"
     local item_val="$3"
-    local config_file=$(config_file_of_profile "${profile_name}")
+    local config_file="$(get_path config_file "${profile_name}")"
     create_default_config_file_if_not_exist "${profile_name}"
-    if (grep -q "^${item_name}=.*" ${config_file}); then
-        escaped_name_val_str=$(printf '%s\n' "${item_name}=${item_val}" | sed -e 's/[\/&]/\\&/g')
-        sed -i "s/^${item_name}=.*/${escaped_name_val_str}/" ${config_file}
+    if (grep -q "^${item_name}=.*" "${config_file}"); then
+        escaped_name_val_str="$(printf '%s="%s"\n' "${item_name}" "${item_val}" | sed -e 's/[\/&]/\\&/g')"
+        sed -i "s/^${item_name}=.*/${escaped_name_val_str}/" "${config_file}"
     else
-        echo "${item_name}=${item_val}" >>${config_file}
+        echo "${item_name}=\"${item_val}\"" >>"${config_file}"
     fi
+}
+
+function get_row_col_values_from_config() {
+    local profile_name="$1"
+    local rowcols="$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")"
+    check_row_cols_value "${rowcols}"
+    IFS='x' read -ra dimensions <<<"$rowcols"
+    echo "${dimensions[@]}"
 }
 
 function check_row_cols_value() {
@@ -104,38 +103,27 @@ function check_row_cols_value() {
 
 function get_number_of_cols_from_config() {
     local profile_name="$1"
-    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")
-    check_row_cols_value "${rowcols}"
-    local dimensions
-    IFS='x' read -ra dimensions <<<"$rowcols"
-    local cols=${dimensions[0]}
-    echo "${cols}"
+    read -ra dimensions <<<"$(get_row_col_values_from_config "${profile_name}")"
+    echo "${dimensions[1]}"
 }
 
 function get_number_of_rows_from_config() {
     local profile_name="$1"
-    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")
-    check_row_cols_value "${rowcols}"
-    local dimensions
-    IFS='x' read -ra dimensions <<<"$rowcols"
-    local rows=${dimensions[1]}
-    echo "${rows}"
+    read -ra dimensions <<<"$(get_row_col_values_from_config "${profile_name}")"
+    echo "${dimensions[0]}"
 }
 
 function get_number_of_windows_from_config() {
     local profile_name="$1"
-    local rowcols=$(read_item_from_profile_config_file "${profile_name}" "QW_ROWSCOLS")
-    check_row_cols_value "${rowcols}"
-    local dimensions
-    IFS='x' read -ra dimensions <<<"$rowcols"
-    local cols=${dimensions[0]}
-    local rows=${dimensions[1]}
+    read -ra dimensions <<<"$(get_row_col_values_from_config "${profile_name}")"
+    local rows="${dimensions[0]}"
+    local cols="${dimensions[1]}"
     echo $((rows * cols))
 }
 
 function profile_exists() {
     local profile_name="$1"
-    local profile_dir=$(directory_of_profile "${profile_name}")
+    local profile_dir=$(get_path profile_dir "${profile_name}")
     test -d "${profile_dir}"
 }
 
@@ -146,8 +134,8 @@ function termi_conf_add_hpaned() {
     local ratio="$3"
     cat <<EOF
         [[[hp.${no}]]]
-            order="${gv_orders[${parent}]}"
-            parent="${parent}"
+            order=${gv_orders[${parent}]}
+            parent=${parent}
             type=HPaned
             ratio=${ratio}
 EOF
@@ -161,7 +149,7 @@ function termi_conf_add_vpaned() {
     local ratio="$4"
     cat <<EOF
         [[[vp.${col}.${row}]]]
-            order="${gv_orders[${parent}]}"
+            order=${gv_orders[${parent}]}
             parent=${parent}
             type=VPaned
             ratio=${ratio}
@@ -176,14 +164,14 @@ function termi_conf_add_terminal() {
     local profile_name="$4"
     cat <<EOF
         [[[terminal.${col}.${row}]]]
-            order="${gv_orders[${parent}]}"
+            order=${gv_orders[${parent}]}
             parent=${parent}
             type=Terminal
             profile=profile.${col}.${row}
             title="Profile: ${profile_name} Window no: ${gv_window_counter}"
 EOF
     gv_orders[${parent}]=$((${gv_orders[${parent}]} + 1))
-    local rc_file=$(rc_file_of_window_of_profile "${profile_name}" $gv_window_counter)
+    local rc_file=$(get_path rc_file "${profile_name}" $gv_window_counter)
     gv_termi_conf_profiles+=$(
         cat <<EOF
 
@@ -214,16 +202,16 @@ function gen_termi_conf() {
 
     cat <<EOF
 [global_config]
-    broadcast_special = off
-    enabled_plugins = LaunchpadCodeURLHandler, APTURLHandler, LaunchpadBugURLHandler
-    inactive_color_offset = 1.0
-    suppress_multiple_term_dialog = True
+    broadcast_special=off
+    enabled_plugins=LaunchpadCodeURLHandler, APTURLHandler, LaunchpadBugURLHandler
+    inactive_color_offset=1.0
+    suppress_multiple_term_dialog=True
 [layouts]
     [[special]]
         [[[root]]]
-            order = 0
-            parent = ""
-            type = Window
+            order=0
+            parent=""
+            type=Window
 EOF
 
     # Loop over columns and rows
@@ -231,18 +219,18 @@ EOF
     gv_orders["root"]="0"
     for ((c = 1; c <= cols; c++)); do
         if ((c < cols)); then
-            ratio=$(calc_ratio ${c} ${cols})
-            termi_conf_add_hpaned $col_parent $c $ratio
+            ratio="$(calc_ratio "${c}" "${cols}")"
+            termi_conf_add_hpaned "$col_parent" "$c" "$ratio"
             col_parent="hp.${c}"
         fi
         local row_parent="${col_parent}"
         for ((r = 1; r <= rows; r++)); do
             if ((r < rows)); then
-                ratio=$(calc_ratio ${r} ${rows})
-                termi_conf_add_vpaned $row_parent $r $c $ratio
+                ratio="$(calc_ratio "${r}" "${rows}")"
+                termi_conf_add_vpaned "$row_parent" "$r" "$c" "$ratio"
                 row_parent="vp.${c}.${r}"
             fi
-            termi_conf_add_terminal $row_parent $r $c "${profile_name}"
+            termi_conf_add_terminal "$row_parent" "$r" "$c" "${profile_name}"
         done
     done
 
@@ -253,12 +241,13 @@ EOF
 function create_rc_file_for_window() {
     local profile_name="$1"
     local window_no="$2"
-    local profile_dir=$(directory_of_profile "${profile_name}")
-    local working_dir=$(working_dir_of_profile "${profile_name}")
-    local termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
-    local window_dir=$(window_dir_of_profile "${profile_name}" $window_no)
-    local pwd_file=$(pwd_file_of_window_of_profile "${profile_name}" $window_no)
-    local hist_file=$(hist_file_of_window_of_profile "${profile_name}" $window_no)
+    local profile_dir="$(get_path profile_dir "${profile_name}")"
+    local working_dir="$(get_path working_dir "${profile_name}")"
+    local termi_conf_file="$(get_path termi_conf_file "${profile_name}")"
+    local config_file="$(get_path config_file "${profile_name}")"
+    local window_dir="$(get_path window_dir "${profile_name}" "${window_no}")"
+    local pwd_file="$(get_path pwd_file "${profile_name}" "${window_no}")"
+    local hist_file="$(get_path hist_file "${profile_name}" "${window_no}")"
     cat <<EOF
 #!/usr/bin/env bash
 # this file is auto generated when creating the profile
@@ -268,46 +257,45 @@ function create_rc_file_for_window() {
 source "\${HOME}/.bashrc"
 
 # restore wd, if any exists for this profile ...
-if [[ -r ${pwd_file} ]]; then
+if [[ -r "${pwd_file}" ]]; then
   cd "\$(cat "${pwd_file}")" 2>/dev/null
 fi
 
 # every window have its own bash history
 HISTFILE="${hist_file}"
 # make history large
-HISTSIZE=100000
-HISTFILESIZE=100000
 # save immediately after every command
 PROMPT_COMMAND="history -a;\$PROMPT_COMMAND"
 # save working directory after every shell command
-PROMPT_COMMAND="pwd>${pwd_file};\${PROMPT_COMMAND}"
-QW_PROFILE="${profile_name}"
+PROMPT_COMMAND="pwd>"${pwd_file}";\${PROMPT_COMMAND}"
+source "${config_file}"
 EOF
 }
 
 function create_files_of_profile() {
     local profile_name="$1"
     local rowcols="$2"
-    local profile_dir=$(directory_of_profile "${profile_name}")
+    local profile_dir=$(get_path profile_dir "${profile_name}")
     mkdir -p "${profile_dir}" 2>/dev/null || error_exit "Can't create dir ${profile_dir}"
-    local working_dir=$(working_dir_of_profile "${profile_name}")
+    local working_dir=$(get_path working_dir "${profile_name}")
     mkdir -p "${working_dir}" 2>/dev/null || error_exit "Can't create dir ${working_dir}"
     # first write to config
+    write_item_in_profile_config_file "${profile_name}" "QW_PROFILE" "${profile_name}"
     write_item_in_profile_config_file "${profile_name}" "QW_ROWSCOLS" "${rowcols}"
     # then use the config
     local num_windows=$(get_number_of_windows_from_config "${profile_name}")
     local rows=$(get_number_of_rows_from_config "${profile_name}")
     local cols=$(get_number_of_cols_from_config "${profile_name}")
-    local termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
+    local termi_conf_file=$(get_path termi_conf_file "${profile_name}")
     gen_termi_conf "${rows}" "${cols}" "${profile_name}" >"${termi_conf_file}" || error_exit "Can't create file ${termi_conf_file}"
     for ((i = 1; i <= num_windows; i++)); do
-        local window_dir=$(window_dir_of_profile "${profile_name}" $i)
+        local window_dir=$(get_path window_dir "${profile_name}" $i)
         mkdir -p "${window_dir}" 2>/dev/null || error_exit "Can't create dir ${window_dir}"
-        local pwd_file=$(pwd_file_of_window_of_profile "${profile_name}" $i)
+        local pwd_file=$(get_path pwd_file "${profile_name}" $i)
         echo "${working_dir}" >"${pwd_file}" || error_exit "Can't create file ${pwd_file}"
-        local hist_file=$(hist_file_of_window_of_profile "${profile_name}" $i)
+        local hist_file=$(get_path hist_file "${profile_name}" $i)
         touch "${hist_file}" || error_exit "Can't create file ${hist_file}"
-        local rc_file=$(rc_file_of_window_of_profile "${profile_name}" $i)
+        local rc_file=$(get_path rc_file "${profile_name}" $i)
         create_rc_file_for_window "${profile_name}" $i >"${rc_file}"
     done
 }
@@ -316,12 +304,12 @@ function create_files_of_profile() {
 usage() {
     local script_name=$(basename "$0")
     echo "Usage:"
-    echo "  ${script_name} <profile-name>  [COLSxROWS] : Spawn or switch to the specified profile"
+    echo "  ${script_name} <profile-name>  [ROWSxCOLS] : Spawn or switch to the specified profile"
     echo "  ${script_name} --list                      : List all available profiles"
     echo "  ${script_name} --remove <profile>          : Remove the specified profile"
     echo "  ${script_name} --rename <old> <new>        : Rename a profile from <old> to <new>"
     echo "  ${script_name} --help                      : This help"
-    exit 1
+    exit 0
 }
 
 # No arguments provided
@@ -346,7 +334,7 @@ case "$ACTION" in
         usage
     fi
     profile_name="$2"
-    profile_dir=$(directory_of_profile "${profile_name}")
+    profile_dir=$(get_path profile_dir "${profile_name}")
     rm -rf "${profile_dir:?}"
     echo "Removed profile: ${2}"
     ;;
@@ -357,16 +345,16 @@ case "$ACTION" in
     fi
     profile_name="$2"
     new_profile_name="$3"
-    profile_dir=$(directory_of_profile "${profile_name}")
-    new_profile_dir=$(directory_of_profile "${new_profile_name}")
+    profile_dir=$(get_path profile_dir "${profile_name}")
+    new_profile_dir=$(get_path profile_dir "${new_profile_name}")
     escaped_profile_dir=$(printf '%s\n' "${profile_dir}" | sed -e 's/[\/&]/\\&/g')
     new_escaped_profile_dir=$(printf '%s\n' "${new_profile_dir}" | sed -e 's/[\/&]/\\&/g')
-    working_dir=$(working_dir_of_profile "${profile_name}")
-    new_working_dir=$(working_dir_of_profile "${new_profile_name}")
+    working_dir=$(get_path working_dir "${profile_name}")
+    new_working_dir=$(get_path working_dir "${new_profile_name}")
     escaped_working_dir=$(printf '%s\n' "${working_dir}" | sed -e 's/[\/&]/\\&/g')
     new_escaped_working_dir=$(printf '%s\n' "${new_working_dir}" | sed -e 's/[\/&]/\\&/g')
-    termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
-    new_termi_conf_file=$(termi_conf_file_of_profile "${new_profile_name}")
+    termi_conf_file=$(get_path termi_conf_file "${profile_name}")
+    new_termi_conf_file=$(get_path termi_conf_file "${new_profile_name}")
 
     # Rename the main directory
     mv "$profile_dir" "$new_profile_dir"
@@ -376,11 +364,11 @@ case "$ACTION" in
     num_windows=$(get_number_of_windows_from_config "${new_profile_name}")
 
     for ((i = 1; i <= num_windows; i++)); do
-        pwd_file=$(pwd_file_of_window_of_profile "${new_profile_name}" $i)
+        pwd_file=$(get_path pwd_file "${new_profile_name}" $i)
         if [[ -f "$pwd_file" ]]; then
             sed -i "s|${escaped_working_dir}|${new_escaped_working_dir}|g" "$pwd_file"
         fi
-        rc_file=$(rc_file_of_window_of_profile "${new_profile_name}" $i)
+        rc_file=$(get_path rc_file "${new_profile_name}" $i)
         if [[ -f "$rc_file" ]]; then
             sed -i "s|${escaped_profile_dir}|${new_escaped_profile_dir}|g" "$rc_file"
         fi
@@ -405,7 +393,7 @@ case "$ACTION" in
         wmctrl -a "qw ${profile_name}"
     else
         echo "Creating session for ${profile_name}"
-        termi_conf_file=$(termi_conf_file_of_profile "${profile_name}")
+        termi_conf_file=$(get_path termi_conf_file "${profile_name}")
         terminator --no-dbus --config="${termi_conf_file}" --layout=special --profile=special --maximise --title="qw ${profile_name}" &
     fi
     ;;

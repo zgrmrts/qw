@@ -27,10 +27,10 @@ are installed on your system.
 ### Spawning or Switching to a Profile
 
 ```bash
-qw <profile_name> [<cols>x<rows>]
+qw <profile_name> [<rows>x<cols>]
 ```
 
-If the profile is already active, `qw` will switch to the corresponding `terminator` window. For new profiles, a fresh environment is set up in a dedicated directory. If `<cols>x<rows>` is provided for new profiles, the terminator window will be divided into the specified number of columns and rows. Otherwise, it will use a default layout of `2x2`. Each section in the grid stores the bash history, current directory info, and a temporary workspace for each shell.
+If the profile is already active, `qw` will switch to the corresponding `terminator` window. For new profiles, a fresh environment is set up in a dedicated directory. If `<rows>x<cols>` is provided for new profiles, the terminator window will be divided into the specified number of rows and columns. Otherwise, it will use a default layout of `2x2`. Each section in the grid stores the bash history, current directory info, and a temporary workspace for each shell.
 
 ### Listing Profiles
 

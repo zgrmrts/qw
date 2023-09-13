@@ -189,8 +189,7 @@ EOF
         scrollback_lines = 5000
         use_custom_command = True
         exit_action = restart
-        use_system_font = False
-        font = Ubuntu Mono 11
+        use_system_font = True
 EOF
     )
     ((gv_window_counter++))

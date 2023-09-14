@@ -299,6 +299,18 @@ function create_files_of_profile() {
         create_rc_file_for_window "${profile_name}" $i >"${rc_file}"
     done
 }
+function regenerate_files_of_profile() {
+    local profile_name="$1"
+    local num_windows=$(get_number_of_windows_from_config "${profile_name}")
+    local rows=$(get_number_of_rows_from_config "${profile_name}")
+    local cols=$(get_number_of_cols_from_config "${profile_name}")
+    local termi_conf_file=$(get_path termi_conf_file "${profile_name}")
+    gen_termi_conf "${rows}" "${cols}" "${profile_name}" >"${termi_conf_file}" || error_exit "Can't create file ${termi_conf_file}"
+    for ((i = 1; i <= num_windows; i++)); do
+        local rc_file=$(get_path rc_file "${profile_name}" $i)
+        create_rc_file_for_window "${profile_name}" $i >"${rc_file}"
+    done
+}
 
 # Function to display usage information
 usage() {
@@ -308,6 +320,7 @@ usage() {
     echo "  ${script_name} --list                      : List all available profiles"
     echo "  ${script_name} --remove <profile>          : Remove the specified profile"
     echo "  ${script_name} --rename <old> <new>        : Rename a profile from <old> to <new>"
+    echo "  ${script_name} --regen_conf <profile>      : Regenerate terminator and rc config files for the profile"
     echo "  ${script_name} --help                      : This help"
     exit 0
 }
@@ -384,6 +397,15 @@ case "$ACTION" in
     fi
 
     echo "Renamed profile from ${profile_name} to ${new_profile_name}"
+    ;;
+--regen_conf)
+    if [[ $# -ne 2 ]]; then
+        usage
+    fi
+    profile_name="$2"
+    regenerate_files_of_profile "${profile_name}"
+
+    echo "Regenerated files for profile ${profile_name}"
     ;;
 
 *)

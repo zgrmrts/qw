@@ -355,9 +355,14 @@ case "$ACTION" in
     new_escaped_working_dir=$(printf '%s\n' "${new_working_dir}" | sed -e 's/[\/&]/\\&/g')
     termi_conf_file=$(get_path termi_conf_file "${profile_name}")
     new_termi_conf_file=$(get_path termi_conf_file "${new_profile_name}")
+    termi_title="Profile: ${profile_name} Window no: "
+    new_termi_title="Profile: ${new_profile_name} Window no: "
+    escaped_termi_title=$(printf '%s\n' "${termi_title}" | sed -e 's/[\/&]/\\&/g')
+    new_escaped_termi_title=$(printf '%s\n' "${new_termi_title}" | sed -e 's/[\/&]/\\&/g')
 
     # Rename the main directory
     mv "$profile_dir" "$new_profile_dir"
+    write_item_in_profile_config_file "${new_profile_name}" "QW_PROFILE" "${new_profile_name}"
 
     sed -i "s|${escaped_profile_dir}|${new_escaped_profile_dir}|g" "$new_termi_conf_file"
     # Update any paths in the pwd files under windowX directories
@@ -373,6 +378,10 @@ case "$ACTION" in
             sed -i "s|${escaped_profile_dir}|${new_escaped_profile_dir}|g" "$rc_file"
         fi
     done
+    termi_conf_file=$(get_path termi_conf_file "${new_profile_name}")
+    if [[ -f "$termi_conf_file" ]]; then
+        sed -i "s|${escaped_termi_title}|${new_escaped_termi_title}|g" "$termi_conf_file"
+    fi
 
     echo "Renamed profile from ${profile_name} to ${new_profile_name}"
     ;;

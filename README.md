@@ -1,17 +1,18 @@
 # qw
 
-Profile-based, multi-window workspaces in terminator with individualized bash histories and working directories.
+Create terminator profiles for individualized bash histories and working directories.
 
 ## Overview
 
-`qw` is a utility that harnesses the power of `terminator` to create a highly customized, multi-window terminal environment. Each profile supports multiple shells (or subwindows), and each shell retains its own dedicated bash history and current working directory. This design ensures that users can seamlessly switch between different work contexts or projects without losing their work state.
+`qw` is a utility to create and manage `terminator` profiles to enable multi-terminal workspaces where each shell within a workspace maintains its `own dedicated bash history and current working directory`. This allows users to effortlessly switch between various work contexts or projects without losing their current work state.
 
 ## Features
 
-- **Profile-based Workspaces:** Execute `qw <profile_name>` to spawn or switch to a terminal workspace defined by that profile.
-- **Persistent Shell States:** Each shell in a `terminator` window maintains its unique bash history and current directory, persisting across sessions.
-- **Bash Completion:** Integrated bash completion provides auto-suggestions for `qw` based on available profiles, streamlining the command invocation process.
-- **Profile Management:** Commands to list, remove, or rename profiles with ease.
+- **Profile-based Workspaces:** Execute `qw <profile_name>` to spawn or switch to a terminal workspace defined by that profile. The profile definition is stored in a separate file within the workspace, and the utility does not modify `terminator's` default configuration file.
+- **Persistent Shell States:** Each shell in a `terminator` window maintains its own bash history and current directory, persisting across sessions. Bash is configured to update both the history and working directory after each command is invoked.
+- **Layout Control:** Define the window layout of `terminator` by specifying the dimensions for the profile using `qw <profile_name> [3x2]`, where the first number represents the number of rows and the second represents the number of columns.
+- **Bash Completion:** Integrated bash completion provides auto-suggestions for `qw` commands based on available profiles, streamlining the command invocation process.
+- **Profile Management:** Commands are available to list, remove, or rename profiles with ease.
 
 ## Prerequisites
 
